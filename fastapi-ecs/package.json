@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@hybridless/serverless-ecs-plugin": "^0.0.53"
+  },
+  "devDependencies": {
+    "serverless-scriptable-plugin": "^1.3.1"
+  }
+}

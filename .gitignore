@@ -1,0 +1,64 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+
+# C extensions
+*.so
+
+# Environment variables and settings files
+.env
+.env.*
+
+# Virtual environment
+venv/
+.env/
+.venv/
+env/
+ENV/
+
+# FastAPI related
+*.db
+*.sqlite3
+migrations/
+
+# Logs
+logs/
+*.log
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Static files
+/static/
+media/
+
+# IDE specific files
+.vscode/
+.idea/
+
+# MacOS
+.DS_Store
+
+# Test coverage and pytest cache
+.coverage
+.tox/
+.cache/
+*.cover
+*.coverage
+*.py,cover
+pytest_cache/
+htmlcov/
+
+# package directories
+node_modules
+jspm_packages
+
+
+# Serverless directories
+.serverless
+
+# Virtual Environment
+myenv/

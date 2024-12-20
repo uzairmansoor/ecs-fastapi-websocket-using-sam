@@ -1,0 +1,13 @@
+nvm install --lts
+
+Now using node v22.12.0 (npm v10.9.0)
+
+npm i serverless@3.39.0 -g
+
+npm i @hybridless/serverless-ecs-plugin
+
+npm install serverless-scriptable-plugin --save-dev
+
+chmod +x scripts/build-push-ecr.sh
+
+Install Docker and Run

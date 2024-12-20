@@ -1,0 +1,301 @@
+service: fastapi-ecs-service
+
+provider:
+  name: aws
+  region: us-east-1
+  profile: nebula-shines
+  stage: dev
+  runtime: provided.al2
+
+resources:
+  Resources:
+    ### ECS Cluster ###
+    ECSCluster:
+      Type: AWS::ECS::Cluster
+      Properties:
+        ClusterName: fastapi-cluster-${self:provider.stage}
+
+    ### Network Load Balancer ###
+    FastapiNLB:
+      Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+      Properties:
+        Name: fastapi-nlb-${self:provider.stage}
+        Type: network
+        Scheme: internal # Use "internet-facing" if public access is needed
+        Subnets:
+          - subnet-043ab8834da8acc6a
+          - subnet-084c36d74b3cd6b26
+        SecurityGroups:
+          - sg-038f145246812ae2b
+
+    ### Target Group for ECS Fargate ###
+    FastapiTargetGroup:
+      Type: AWS::ElasticLoadBalancingV2::TargetGroup
+      DependsOn: FastapiNLB
+      Properties:
+        Name: fastapi-tg-${self:provider.stage}
+        Protocol: TCP
+        Port: 8000
+        VpcId: vpc-0dec487a3749c16fd # Replace with your VPC ID
+        TargetType: ip
+        HealthCheckProtocol: TCP
+        HealthCheckEnabled: true
+
+    ### Listener for NLB ###
+    FastapiNLBListener:
+      Type: AWS::ElasticLoadBalancingV2::Listener
+      DependsOn:
+        - FastapiNLB
+        - FastapiTargetGroup
+      Properties:
+        LoadBalancerArn: !Ref FastapiNLB
+        Protocol: TCP
+        Port: 80
+        DefaultActions:
+          - Type: forward
+            TargetGroupArn: !Ref FastapiTargetGroup
+
+    ### ECS Task Definition ###
+    ECSTaskDefinition:
+      Type: AWS::ECS::TaskDefinition
+      Properties:
+        Family: fastapi-task-${self:provider.stage}
+        Cpu: "512"
+        Memory: "1024"
+        NetworkMode: awsvpc
+        RequiresCompatibilities:
+          - FARGATE
+        RuntimePlatform:
+          CpuArchitecture: "ARM64"
+          OperatingSystemFamily: "LINUX"
+        ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
+        ContainerDefinitions:
+          - Name: fastapi-container
+            Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/serverless-fastapi-ecs-service-dev:latest"
+            Essential: true
+            PortMappings:
+              - ContainerPort: 8000
+                Protocol: TCP
+                AppProtocol: http
+                Name: fast-api-port
+            LogConfiguration:
+              LogDriver: awslogs
+              Options:
+                mode: non-blocking
+                max-buffer-size: 25m
+                awslogs-group: /ecs/fastapi-task-dev
+                awslogs-region: us-east-1
+                awslogs-create-group: "true"
+                awslogs-stream-prefix: efs-task
+
+    ### ECS Service ###
+    ECSFargateService:
+      Type: AWS::ECS::Service
+      DependsOn:
+        - ECSCluster
+        - ECSTaskDefinition
+        - FastapiTargetGroup
+        - FastapiNLBListener
+      Properties:
+        Cluster: !Ref ECSCluster
+        LaunchType: FARGATE
+        DesiredCount: 1
+        TaskDefinition: !Ref ECSTaskDefinition
+        NetworkConfiguration:
+          AwsvpcConfiguration:
+            Subnets:
+              - subnet-043ab8834da8acc6a
+              - subnet-084c36d74b3cd6b26
+            SecurityGroups:
+              - sg-0f5c69814e90894e0
+            AssignPublicIp: DISABLED
+        LoadBalancers:
+          - ContainerName: fastapi-container
+            ContainerPort: 8000
+            TargetGroupArn: !Ref FastapiTargetGroup
+
+    ### ECS Execution Role ###
+    ECSExecutionRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: ecs-execution-role-${self:provider.stage}
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: ecs-tasks.amazonaws.com
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - "arn:aws:iam::aws:policy/CloudWatchFullAccess"
+        Policies:
+          - PolicyName: ECSExecutionPolicy
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - ecr:GetDownloadUrlForLayer
+                    - ecr:BatchGetImage
+                    - ecr:GetAuthorizationToken
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                  Resource: "*"
+
+    ### API Gateway VPC Link ###
+    ApiGatewayVpcLink:
+      Type: AWS::ApiGateway::VpcLink
+      Properties:
+        Name: fastapi-vpc-link-${self:provider.stage}
+        TargetArns:
+          - !Ref FastapiNLB
+
+    ### REST API Gateway ###
+    ApiGatewayRestApi:
+      Type: AWS::ApiGateway::RestApi
+      Properties:
+        Name: RestAPIGateway-${self:provider.stage}
+
+    ApiGatewayResourceApi:
+      Type: AWS::ApiGateway::Resource
+      Properties:
+        ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+        PathPart: api
+        RestApiId: !Ref ApiGatewayRestApi
+
+    ApiGatewayMethodApi:
+      Type: AWS::ApiGateway::Method
+      Properties:
+        RestApiId: !Ref ApiGatewayRestApi
+        ResourceId: !Ref ApiGatewayResourceApi
+        HttpMethod: GET
+        AuthorizationType: NONE
+        ApiKeyRequired: true
+        Integration:
+          Type: HTTP_PROXY
+          IntegrationHttpMethod: GET
+          Uri: 
+            !Sub 
+              - "http://${ALB_DNS}"
+              - ALB_DNS: !GetAtt FastapiNLB.DNSName
+          # Uri: !Sub "http://${ECSFargateService}"
+          ConnectionType: VPC_LINK
+          ConnectionId: !Ref ApiGatewayVpcLink
+
+    RestApiDeployment:
+      Type: AWS::ApiGateway::Deployment
+      DependsOn: ApiGatewayMethodApi
+      Properties:
+        RestApiId: !Ref ApiGatewayRestApi
+        StageName: dev
+
+    ### REST API Key ###
+    RestApiKey:
+      Type: AWS::ApiGateway::ApiKey
+      Properties:
+        Name: fastapi-rest-api-key-${self:provider.stage}
+        Enabled: true
+
+    ### REST API Usage Plan ###
+    ApiGatewayUsagePlan:
+      Type: AWS::ApiGateway::UsagePlan
+      DependsOn: RestApiDeployment
+      Properties:
+        UsagePlanName: fastapi-usage-plan-${self:provider.stage}
+        Throttle:
+          RateLimit: 100
+          BurstLimit: 200
+        ApiStages:
+          - ApiId: !Ref ApiGatewayRestApi
+            Stage: dev
+
+    RestApiKeyUsagePlanAttachment:
+      Type: AWS::ApiGateway::UsagePlanKey
+      Properties:
+        KeyId: !Ref RestApiKey
+        KeyType: API_KEY
+        UsagePlanId: !Ref ApiGatewayUsagePlan
+
+    ### WebSocket API Gateway ###
+    WebSocketApiGateway:
+      Type: AWS::ApiGatewayV2::Api
+      Properties:
+        Name: WebSocketAPIGateway-${self:provider.stage}
+        ProtocolType: WEBSOCKET
+        RouteSelectionExpression: "$request.body.action"
+
+    WebSocketIntegration:
+      Type: AWS::ApiGatewayV2::Integration
+      Properties:
+        ApiId: !Ref WebSocketApiGateway
+        IntegrationType: MOCK
+        PayloadFormatVersion: "1.0"
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
+
+    WebSocketRouteConnect:
+      Type: AWS::ApiGatewayV2::Route
+      DependsOn: WebSocketIntegration
+      Properties:
+        ApiId: !Ref WebSocketApiGateway
+        RouteKey: $connect
+        Target: !Sub "integrations/${WebSocketIntegration}"
+
+    WebSocketRouteDefault:
+      Type: AWS::ApiGatewayV2::Route
+      DependsOn: WebSocketIntegration
+      Properties:
+        ApiId: !Ref WebSocketApiGateway
+        RouteKey: $default
+        Target: !Sub "integrations/${WebSocketIntegration}"
+
+    WebSocketStage:
+      Type: AWS::ApiGatewayV2::Stage
+      DependsOn:
+        - WebSocketRouteConnect
+        - WebSocketRouteDefault
+      Properties:
+        StageName: dev
+        ApiId: !Ref WebSocketApiGateway
+        AutoDeploy: true
+        AccessLogSettings:
+          DestinationArn: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/apigateway/${WebSocketApiGateway}  # Replace with your actual log group ARN
+          Format: '{"requestId":"$context.requestId"}'
+
+    ### WebSocket API Key ###
+    WebSocketApiKey:
+      Type: AWS::ApiGateway::ApiKey
+      Properties:
+        Name: fastapi-websocket-api-key-${self:provider.stage}
+        Enabled: true
+
+    ### WebSocket Usage Plan ###
+    WebSocketApiUsagePlan:
+      Type: AWS::ApiGateway::UsagePlan
+      DependsOn:
+        - WebSocketStage
+      Properties:
+        UsagePlanName: fastapi-websocket-usage-plan-${self:provider.stage}
+        Throttle:
+          RateLimit: 50
+          BurstLimit: 100
+        ApiStages:
+          - ApiId: !Ref WebSocketApiGateway
+            Stage: dev
+
+    WebSocketApiKeyUsagePlanAttachment:
+      Type: AWS::ApiGateway::UsagePlanKey
+      Properties:
+        KeyId: !Ref WebSocketApiKey
+        KeyType: API_KEY
+        UsagePlanId: !Ref WebSocketApiUsagePlan
+  
+  Outputs:
+    ECSFargateService:
+      Description: Name of ECS Fargate Service
+      Value: !Ref ECSFargateService
+      Export:
+        Name: ECSFargateService
