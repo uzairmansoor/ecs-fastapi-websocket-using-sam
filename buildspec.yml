@@ -16,9 +16,6 @@ phases:
       - echo "Getting Docker Env variables from parameter Store..."
       - echo "Logging into Docker Hub..."
       - docker login -u uzairmansoor -p Uzair@123
-  pre_build:
-    commands:
-      - npm install
   build:
     commands:
       - ls -la
