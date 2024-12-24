@@ -1,23 +1,17 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI
 
 app = FastAPI()
 
-@app.get("/")
-def root():
-    return {"status": "healthy"}
+@app.get("/connect")
+async def connect():
+    print("/connect endpoint is invoked")
+    return {"message": "Connection successful"}
 
-@app.get("/api")
-async def read_root():
-    return {"message": "Hello from FastAPI"}
+@app.post("/joinroom")
+async def join_room():
+    print("/joinroom endpoint is invoked")
+    return {"message": "Room joined successfully"}
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    await websocket.send_text("Hello from FastAPI WebSocket")
-    while True:
-        try:
-            data = await websocket.receive_text()
-            await websocket.send_text(f"Message received: {data}")
-        except:
-            break
-    await websocket.close()
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=8080)

@@ -1,13 +1,20 @@
-# Specify ARM64 platform explicitly for Apple Silicon
-FROM --platform=linux/arm64 python:3.9-slim
+# Use the official Python image as the base image
+FROM python:3.10-slim
 
+# Set the working directory in the container
 WORKDIR /app
 
+# Copy the requirements.txt file into the container
 COPY requirements.txt .
+
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
+# Copy the application code into the container
+COPY . .
 
-EXPOSE 8000
+# Expose the application port
+EXPOSE 8080
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Command to run the application
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]

@@ -20,8 +20,8 @@ phases:
     commands:
       - ls -la
       - cd fastapi-ecs
-      - docker build -t ecs-fastapi -f Dockerfile .
-      - docker tag serverless-fastapi-ecs-service-dev:latest 611466466027.dkr.ecr.us-east-1.amazonaws.com/serverless-fastapi-ecs-service-dev:latest
+      - docker build -t ecs-fastapi:latest -f Dockerfile .
+      - docker tag ecs-fastapi:latest 611466466027.dkr.ecr.us-east-1.amazonaws.com/serverless-fastapi-ecs-service-dev:latest
       # - docker build --tag $IMAGE_REPO_NAME -f Dockerfile.dev .
       # - docker tag $IMAGE_REPO_NAME:latest 611466466027.dkr.ecr.us-east-1.amazonaws.com/$IMAGE_REPO_NAME:latest
       # - docker tag resume-grader-app-backend:latest 095773313313.dkr.ecr.us-east-1.amazonaws.com/resume-grader-app-backend:latest
