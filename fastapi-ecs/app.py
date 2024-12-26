@@ -2,9 +2,9 @@ from fastapi import FastAPI
 
 app = FastAPI()
 
-@app.get("/")
+@app.get("/health")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Welcome to the Fast APIs"}
 
 @app.get("/connect")
 async def connect():
@@ -16,7 +16,7 @@ async def join_room():
     print("/joinroom endpoint is invoked")
     return {"message": "Room joined successfully"}
 
-@app.get("/disconnect")
+@app.get("/exitroom")
 async def disconnect():
-    print("/disconnect endpoint is invoked")
-    return {"message": "Disconnected successfully"}
+    print("/exitroom endpoint is invoked")
+    return {"message": "Exit Room successfully"}
