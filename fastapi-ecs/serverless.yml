@@ -21,7 +21,7 @@ resources:
       Properties:
         Name: fastapi-nlb-${self:provider.stage}
         Type: network
-        Scheme: internal # Use "internet-facing" if public access is needed
+        Scheme: internal
         Subnets:
           - subnet-043ab8834da8acc6a
           - subnet-084c36d74b3cd6b26
@@ -36,7 +36,7 @@ resources:
         Name: fastapi-tg-${self:provider.stage}
         Protocol: TCP
         Port: 8000
-        VpcId: vpc-0dec487a3749c16fd # Replace with your VPC ID
+        VpcId: vpc-0dec487a3749c16fd
         TargetType: ip
         HealthCheckProtocol: TCP
         HealthCheckEnabled: true
@@ -66,7 +66,7 @@ resources:
         RequiresCompatibilities:
           - FARGATE
         RuntimePlatform:
-          CpuArchitecture: "ARM64"
+          CpuArchitecture: "X86_64"
           OperatingSystemFamily: "LINUX"
         ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
         ContainerDefinitions:
@@ -154,7 +154,7 @@ resources:
     ApiGatewayRestApi:
       Type: AWS::ApiGateway::RestApi
       Properties:
-        Name: RestAPIGateway-${self:provider.stage}
+        Name: fastapi-ecs-rest-${self:provider.stage}
 
     ApiGatewayResourceApi:
       Type: AWS::ApiGateway::Resource
@@ -174,11 +174,10 @@ resources:
         Integration:
           Type: HTTP_PROXY
           IntegrationHttpMethod: GET
-          Uri: 
-            !Sub 
-              - "http://${ALB_DNS}"
+          Uri:
+            !Sub
+              - "http://${ALB_DNS}/api"
               - ALB_DNS: !GetAtt FastapiNLB.DNSName
-          # Uri: !Sub "http://${ECSFargateService}"
           ConnectionType: VPC_LINK
           ConnectionId: !Ref ApiGatewayVpcLink
 
@@ -220,50 +219,151 @@ resources:
     WebSocketApiGateway:
       Type: AWS::ApiGatewayV2::Api
       Properties:
-        Name: WebSocketAPIGateway-${self:provider.stage}
+        Name: fastapi-ecs-websocket-${self:provider.stage}
         ProtocolType: WEBSOCKET
         RouteSelectionExpression: "$request.body.action"
 
-    WebSocketIntegration:
+    ### WebSocket Integration ###
+    WebSocketConnectIntegration:
       Type: AWS::ApiGatewayV2::Integration
       Properties:
         ApiId: !Ref WebSocketApiGateway
-        IntegrationType: MOCK
+        ConnectionType: VPC_LINK
+        ConnectionId: !Ref ApiGatewayVpcLink
+        IntegrationMethod: GET
+        IntegrationType: HTTP_PROXY
+        IntegrationUri:
+          !Sub
+            - "http://${ALB_DNS}/connect"
+            - ALB_DNS: !GetAtt FastapiNLB.DNSName
         PayloadFormatVersion: "1.0"
         RequestTemplates:
           application/json: |
             {
               "statusCode": 200
             }
+    
+    WebSocketExitRoomIntegration:
+      Type: AWS::ApiGatewayV2::Integration
+      Properties:
+        ApiId: !Ref WebSocketApiGateway
+        ConnectionType: VPC_LINK
+        ConnectionId: !Ref ApiGatewayVpcLink
+        IntegrationMethod: POST
+        IntegrationType: HTTP_PROXY
+        IntegrationUri:
+          !Sub
+            - "http://${ALB_DNS}/exitroom"
+            - ALB_DNS: !GetAtt FastapiNLB.DNSName
+        PayloadFormatVersion: "1.0"
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
+    
+    WebSocketHealthIntegration:
+      Type: AWS::ApiGatewayV2::Integration
+      Properties:
+        ApiId: !Ref WebSocketApiGateway
+        ConnectionType: VPC_LINK
+        ConnectionId: !Ref ApiGatewayVpcLink
+        IntegrationMethod: POST
+        IntegrationType: HTTP_PROXY
+        IntegrationUri:
+          !Sub
+            - "http://${ALB_DNS}/health"
+            - ALB_DNS: !GetAtt FastapiNLB.DNSName
+        PayloadFormatVersion: "1.0"
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
+    
+    WebSocketJoinRoomIntegration:
+      Type: AWS::ApiGatewayV2::Integration
+      Properties:
+        ApiId: !Ref WebSocketApiGateway
+        ConnectionType: VPC_LINK
+        ConnectionId: !Ref ApiGatewayVpcLink
+        IntegrationMethod: POST
+        IntegrationType: HTTP_PROXY
+        IntegrationUri:
+          !Sub
+            - "http://${ALB_DNS}/joinroom"
+            - ALB_DNS: !GetAtt FastapiNLB.DNSName
+        PayloadFormatVersion: "1.0"
+        RequestTemplates:
+          application/json: |
+            {
+              "connectionId": "$context.connectionId"
+              "payload": $input.body
+            }
 
+    ### WebSocket Routes ###
     WebSocketRouteConnect:
       Type: AWS::ApiGatewayV2::Route
-      DependsOn: WebSocketIntegration
+      DependsOn: WebSocketConnectIntegration
       Properties:
         ApiId: !Ref WebSocketApiGateway
+        ApiKeyRequired: true
         RouteKey: $connect
-        Target: !Sub "integrations/${WebSocketIntegration}"
+        AuthorizationType: NONE
+        OperationName: WebSocketConnectRoute
+        Target: !Sub "integrations/${WebSocketConnectIntegration}"
 
-    WebSocketRouteDefault:
+    WebSocketRouteExitRoom:
       Type: AWS::ApiGatewayV2::Route
-      DependsOn: WebSocketIntegration
+      DependsOn: WebSocketExitRoomIntegration
       Properties:
         ApiId: !Ref WebSocketApiGateway
-        RouteKey: $default
-        Target: !Sub "integrations/${WebSocketIntegration}"
+        ApiKeyRequired: true
+        RouteKey: exitroom
+        AuthorizationType: NONE
+        OperationName: WebSocketDisconnectRoute
+        Target: !Sub "integrations/${WebSocketExitRoomIntegration}"
 
+    WebSocketRouteHealth:
+      Type: AWS::ApiGatewayV2::Route
+      DependsOn: WebSocketHealthIntegration
+      Properties:
+        ApiId: !Ref WebSocketApiGateway
+        ApiKeyRequired: true
+        RouteKey: health
+        AuthorizationType: NONE
+        OperationName: WebSocketDefaultRoute
+        Target: !Sub "integrations/${WebSocketHealthIntegration}"
+    
+    WebSocketRouteJoinRoom:
+      Type: AWS::ApiGatewayV2::Route
+      DependsOn: WebSocketJoinRoomIntegration
+      Properties:
+        ApiId: !Ref WebSocketApiGateway
+        ApiKeyRequired: true
+        RouteKey: joinroom
+        AuthorizationType: NONE
+        OperationName: WebSocketDefaultRoute
+        Target: !Sub "integrations/${WebSocketJoinRoomIntegration}"
+
+    ### WebSocket Stage ###
     WebSocketStage:
       Type: AWS::ApiGatewayV2::Stage
       DependsOn:
         - WebSocketRouteConnect
-        - WebSocketRouteDefault
+        - WebSocketRouteExitRoom
+        - WebSocketRouteHealth
+        - WebSocketRouteJoinRoom
       Properties:
         StageName: dev
         ApiId: !Ref WebSocketApiGateway
         AutoDeploy: true
+        DefaultRouteSettings:
+          LoggingLevel: INFO
+          DataTraceEnabled: true
         AccessLogSettings:
-          DestinationArn: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/apigateway/${WebSocketApiGateway}  # Replace with your actual log group ARN
-          Format: '{"requestId":"$context.requestId"}'
+          DestinationArn: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/apigateway/${WebSocketApiGateway}
+          Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","caller":"$context.identity.caller","user":"$context.identity.user","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength"}'
 
     ### WebSocket API Key ###
     WebSocketApiKey:
@@ -292,7 +392,7 @@ resources:
         KeyId: !Ref WebSocketApiKey
         KeyType: API_KEY
         UsagePlanId: !Ref WebSocketApiUsagePlan
-  
+
   Outputs:
     ECSFargateService:
       Description: Name of ECS Fargate Service
