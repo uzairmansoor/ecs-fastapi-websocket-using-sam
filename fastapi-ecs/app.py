@@ -2,6 +2,10 @@ from fastapi import FastAPI
 
 app = FastAPI()
 
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
+
 @app.get("/connect")
 async def connect():
     print("/connect endpoint is invoked")
@@ -12,6 +16,7 @@ async def join_room():
     print("/joinroom endpoint is invoked")
     return {"message": "Room joined successfully"}
 
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/disconnect")
+async def disconnect():
+    print("/disconnect endpoint is invoked")
+    return {"message": "Disconnected successfully"}
