@@ -16,7 +16,7 @@ async def join_room():
     print("/joinroom endpoint is invoked")
     return {"message": "Room joined successfully"}
 
-@app.get("/exitroom")
+@app.post("/exitroom")
 async def disconnect():
     print("/exitroom endpoint is invoked")
     return {"message": "Exit Room successfully"}
