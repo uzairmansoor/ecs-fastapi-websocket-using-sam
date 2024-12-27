@@ -24,3 +24,4 @@ async def join_room():
 async def disconnect():
     print("/exitroom endpoint is invoked")
     return {"message": "Exit Room successfully"}
+
