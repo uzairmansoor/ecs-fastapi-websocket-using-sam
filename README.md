@@ -1,5 +1,7 @@
 # Scalable and Secure Deployment of REST and WebSocket APIs on Amazon ECS
 
+![ecs-fastapis-websocket-serverless](https://github.com/user-attachments/assets/39f568f3-efd9-4c61-9abc-38220fac3956)
+
 ## Prerequisites
 
 1. **Setup AWS Profile**
