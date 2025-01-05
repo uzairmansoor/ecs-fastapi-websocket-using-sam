@@ -162,6 +162,13 @@ resources:
         ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
         PathPart: api
         RestApiId: !Ref ApiGatewayRestApi
+    
+    ApiGatewayResourceHealth:
+      Type: AWS::ApiGateway::Resource
+      Properties:
+        ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+        PathPart: health
+        RestApiId: !Ref ApiGatewayRestApi
 
     ApiGatewayMethodApi:
       Type: AWS::ApiGateway::Method
@@ -177,6 +184,24 @@ resources:
           Uri:
             !Sub
               - "http://${ALB_DNS}/api"
+              - ALB_DNS: !GetAtt FastapiNLB.DNSName
+          ConnectionType: VPC_LINK
+          ConnectionId: !Ref ApiGatewayVpcLink
+
+    ApiGatewayMethodHealth:
+      Type: AWS::ApiGateway::Method
+      Properties:
+        RestApiId: !Ref ApiGatewayRestApi
+        ResourceId: !Ref ApiGatewayResourceHealth
+        HttpMethod: GET
+        AuthorizationType: NONE
+        ApiKeyRequired: true
+        Integration:
+          Type: HTTP_PROXY
+          IntegrationHttpMethod: GET
+          Uri:
+            !Sub
+              - "http://${ALB_DNS}/health"
               - ALB_DNS: !GetAtt FastapiNLB.DNSName
           ConnectionType: VPC_LINK
           ConnectionId: !Ref ApiGatewayVpcLink
@@ -242,6 +267,25 @@ resources:
             {
               "statusCode": 200
             }
+
+    WebSocketDisConnectIntegration:
+      Type: AWS::ApiGatewayV2::Integration
+      Properties:
+        ApiId: !Ref WebSocketApiGateway
+        ConnectionType: VPC_LINK
+        ConnectionId: !Ref ApiGatewayVpcLink
+        IntegrationMethod: GET
+        IntegrationType: HTTP_PROXY
+        IntegrationUri:
+          !Sub
+            - "http://${ALB_DNS}/disconnect"
+            - ALB_DNS: !GetAtt FastapiNLB.DNSName
+        PayloadFormatVersion: "1.0"
+        RequestTemplates:
+          application/json: |
+            {
+              "statusCode": 200
+            }
     
     WebSocketExitRoomIntegration:
       Type: AWS::ApiGatewayV2::Integration
@@ -254,25 +298,6 @@ resources:
         IntegrationUri:
           !Sub
             - "http://${ALB_DNS}/exitroom"
-            - ALB_DNS: !GetAtt FastapiNLB.DNSName
-        PayloadFormatVersion: "1.0"
-        RequestTemplates:
-          application/json: |
-            {
-              "statusCode": 200
-            }
-    
-    WebSocketHealthIntegration:
-      Type: AWS::ApiGatewayV2::Integration
-      Properties:
-        ApiId: !Ref WebSocketApiGateway
-        ConnectionType: VPC_LINK
-        ConnectionId: !Ref ApiGatewayVpcLink
-        IntegrationMethod: POST
-        IntegrationType: HTTP_PROXY
-        IntegrationUri:
-          !Sub
-            - "http://${ALB_DNS}/health"
             - ALB_DNS: !GetAtt FastapiNLB.DNSName
         PayloadFormatVersion: "1.0"
         RequestTemplates:
@@ -312,6 +337,17 @@ resources:
         AuthorizationType: NONE
         OperationName: WebSocketConnectRoute
         Target: !Sub "integrations/${WebSocketConnectIntegration}"
+    
+    WebSocketRouteDisConnect:
+      Type: AWS::ApiGatewayV2::Route
+      DependsOn: WebSocketConnectIntegration
+      Properties:
+        ApiId: !Ref WebSocketApiGateway
+        ApiKeyRequired: true
+        RouteKey: $disconnect
+        AuthorizationType: NONE
+        OperationName: WebSocketDisConnectRoute
+        Target: !Sub "integrations/${WebSocketConnectIntegration}"
 
     WebSocketRouteExitRoom:
       Type: AWS::ApiGatewayV2::Route
@@ -323,17 +359,6 @@ resources:
         AuthorizationType: NONE
         OperationName: WebSocketDisconnectRoute
         Target: !Sub "integrations/${WebSocketExitRoomIntegration}"
-
-    WebSocketRouteHealth:
-      Type: AWS::ApiGatewayV2::Route
-      DependsOn: WebSocketHealthIntegration
-      Properties:
-        ApiId: !Ref WebSocketApiGateway
-        ApiKeyRequired: true
-        RouteKey: health
-        AuthorizationType: NONE
-        OperationName: WebSocketDefaultRoute
-        Target: !Sub "integrations/${WebSocketHealthIntegration}"
     
     WebSocketRouteJoinRoom:
       Type: AWS::ApiGatewayV2::Route
@@ -351,8 +376,8 @@ resources:
       Type: AWS::ApiGatewayV2::Stage
       DependsOn:
         - WebSocketRouteConnect
+        - WebSocketRouteDisConnect
         - WebSocketRouteExitRoom
-        - WebSocketRouteHealth
         - WebSocketRouteJoinRoom
       Properties:
         StageName: dev
